@@ -10,28 +10,40 @@ type Fetcher interface {
     Fetch(url string) (body string, urls []string, err error)
 }
 
-// Crawl uses fetcher to recursively crawl
-// pages starting with url, to a maximum of depth.
-func Crawl(url string, depth int, fetcher Fetcher) {
-    // TODO: Fetch URLs in parallel.
-    // TODO: Don't fetch the same URL twice.
-    // This implementation doesn't do either:
-    if depth <= 0 {
+var done map[string]bool
+
+func crawl(url string, depth int, fetcher Fetcher, urlchan chan []string) {
+    if done[url] {
         return
     }
+    done[url] = true
+
     body, urls, err := fetcher.Fetch(url)
     if err != nil {
         fmt.Println(err)
         return
     }
+
     fmt.Printf("found: %s %q\n", url, body)
-    for _, u := range urls {
-        Crawl(u, depth-1, fetcher)
+    urlchan <- urls
+}
+
+// Crawl uses fetcher to recursively crawl
+// pages starting with url, to a maximum of depth.
+func Crawl(url string, depth int, fetcher Fetcher) {
+    urlchan := make(chan []string)
+    go crawl(url, depth, fetcher, urlchan)
+    
+    for ; depth > 0; depth-- {
+        next := <- urlchan
+        for _, u := range next {
+            go crawl(u, depth, fetcher, urlchan)
+        }
     }
-    return
 }
 
 func main() {
+    done = make(map[string]bool)
     Crawl("http://golang.org/", 4, fetcher)
 }
 
